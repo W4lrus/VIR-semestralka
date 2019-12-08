@@ -25,6 +25,8 @@ time.sleep(2)
 new_state = env.set_velocity_z((0, 1, -5), duration=5)  # set x and y velocity and keep z=-5 constant
 env.hover()
 
+env.move_to((0, 5, -10), v=5) # speaks for itself
+
 env.reset()  # reset drone to start position (0,0,0)
 
 
