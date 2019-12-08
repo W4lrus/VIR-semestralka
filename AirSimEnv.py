@@ -27,14 +27,14 @@ class AirSimEnv():
         return self.state
 
 
-    def reset(self):
+    def reset(self): # move drone back to starting position
         self.client.reset()
         self.client.enableApiControl(True)  # enable control over python
         self.client.armDisarm(True)
         return self.get_obs()
 
 
-    def step(self , vel_vector ,drivetrain = airsim.DrivetrainType.ForwardOnly , period = 1):
+    def step(self , vel_vector ,drivetrain = airsim.DrivetrainType.MaxDegreeOfFreedom , period = 1): do one 
         '''drivetrain = airsim.DrivetrainType.ForwardOnly makes the drone move only forward. If drone is asked to move to side, he will first rotate, then move forward.
         drivetrain = airsim.DrivetrainType.MaxDegreeOfFreedom just moves drone in a specified direction without turning'''
 
@@ -46,6 +46,6 @@ class AirSimEnv():
         self.client.simPause(True)
         return self.get_obs()
 
-    def set_velocity(self , velocity , drivetrain = airsim.DrivetrainType.ForwardOnly):
+    def set_velocity(self , velocity , drivetrain = airsim.DrivetrainType.MaxDegreeOfFreedom):
         self.client.moveByVelocityAsync(1, 0, 0, 1, drivetrain).join()
         return self.get_obs()
