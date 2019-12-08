@@ -71,12 +71,11 @@ def train(client, policy, params):
             batch_states.append(my_utils.to_tensor(client.getMultirotorState().kinematics_estimated.position, True))
             batch_actions.append(action)
 
-            # Step action
-            quad_vel = client.getMultirotorState().kinematics_estimated.linear_velocity
-            client.moveByVelocityAsync(quad_vel.x_val + action[0], quad_vel.y_val + action[1],
-                                       quad_vel.z_val + action[2], 5).join()
+            # Step action, rotate and move
+            client.rotateByYawRateAsync(40, action[0]) # Fixed rotation speed, action[0] = rotation span
+            client.moveByVelocityAsync(action[1], action[2], 0, 0.5).join() # Moving in the xy plane, fixed z
 
-            reward, done, _ = compute_reward()
+            reward, done, _ = compute_reward(client)
 
             batch_rew += reward
 
@@ -177,18 +176,19 @@ def transform_input(responses):
     return im_final
 
 
-def compute_reward(collision_info, client, previous_distance_goal):
-    # # distance from goal
-    # quad_state = client.getMultirotorState().kinematics_estimated.position
-    # collision_info = client.simGetCollisionInfo()
-    #
-    # distance_goal = np.sqrt((goal[0] - quad_state[0])^2 + (goal[1] - quad_state[1])^2 (goal[2] - quad_state[2])^2)
-    #
-    # reward = 0.1*(previous_distance_goal - distance_goal)
-    # if collision_info.has_collided:
-    #     reward -= 1000
-
+def compute_reward(client):
+    # distance from goal
+    quad_state = client.getMultirotorState().kinematics_estimated.position
+    collision_info = client.simGetCollisionInfo()
     reward = 0
+
+    distance_goal = np.sqrt((goal[0] - quad_state[0])^2 + (goal[1] - quad_state[1])^2)
+    if distance_goal < 1:
+        reward += 1000
+
+    reward -= -1
+    if collision_info.has_collided:
+        reward -= 1000
 
     return reward
 
