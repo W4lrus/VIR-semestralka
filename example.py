@@ -1,5 +1,6 @@
 from AirSimEnv import AirSimEnv
 import matplotlib.pyplot as plt
+import time
 
 env = AirSimEnv(freeze=False)  # connect to airsim and freeze the simulation
 
@@ -19,10 +20,12 @@ image = new_state['img']  # pull rgb image in numpy array format from the state 
 plt.imshow(image)
 plt.show()
 
-new_state = env.set_velocity_z((0, 1, 5), duration=5)  # set x and y velocity and keep z=5 constant
+time.sleep(2)
+
+new_state = env.set_velocity_z((0, 1, -5), duration=5)  # set x and y velocity and keep z=-5 constant
 env.hover()
 
-env.reset() # reset drone to start position
+env.reset()  # reset drone to start position (0,0,0)
 
 
 
