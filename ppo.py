@@ -82,7 +82,7 @@ def train(client, policy, params):
             vely = action[2].item()
             client.moveByVelocityAsync(velx, vely, 0, 0.5).join() # Moving in the xy plane, fixed z
 
-            reward, done, _ = compute_reward(client)
+            reward, done = compute_reward(client)
 
             batch_rew += reward
 
@@ -90,7 +90,7 @@ def train(client, policy, params):
 
             # Record transition
             batch_rewards.append(my_utils.to_tensor(np.asarray(reward, dtype=np.float32), True))
-            batch_new_states.append(my_utils.to_tensor(client.getMultirotorState().kinematics_estimated.position, True))
+            batch_new_states.append(client.getMultirotorState().kinematics_estimated.position)
             batch_terminals.append(done)
 
         # Completed episode
@@ -188,16 +188,18 @@ def compute_reward(client):
     quad_state = client.getMultirotorState().kinematics_estimated.position
     collision_info = client.simGetCollisionInfo()
     reward = 0
+    done = False
 
-    distance_goal = np.sqrt((goal[0] - quad_state[0])^2 + (goal[1] - quad_state[1])^2)
+    distance_goal = np.sqrt((goal[0] - quad_state.x_val)*(goal[0] - quad_state.x_val) + (goal[1] - quad_state.y_val)*(goal[1] - quad_state.y_val))
     if distance_goal < 1:
         reward += 1000
+        done = True
 
     reward -= -1
     if collision_info.has_collided:
         reward -= 1000
 
-    return reward
+    return reward, done
 
 if __name__=="__main__":
     # params = {"iters": 500000, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001, "ppo": True,
