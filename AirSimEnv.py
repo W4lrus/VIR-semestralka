@@ -80,6 +80,10 @@ class AirSimEnv():
         else:
             self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain)
 
+    def move_to(self , coordinates, v=5):
+        (x, y, z) = coordinates
+        self.client.moveToPositionAsync(x, y, z, v).join()
+
     def hover(self):
         self.client.hoverAsync().join()
 
