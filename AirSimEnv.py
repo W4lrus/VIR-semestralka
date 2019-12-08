@@ -52,19 +52,20 @@ class AirSimEnv():
         drivetrain = airsim.DrivetrainType.MaxDegreeOfFreedom just moves drone in a specified direction without turning'''
 
         (vx, vy, vz) = vel_vector
-        self.client.simPause(False) # unfreeze
+        self.unfreeze
         self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain).join()  #join makes the function wait for end of task
-        self.client.simPause(True) # freeze
+        self.freeze
         return self.get_obs()
 
     def step_z(self, vel_vector, duration=1):  # sets velocity using x,y vector and sets z constant
         (vx, vy, z) = vel_vector
-        self.client.simPause(False)
+        self.unfreeze
         self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain).join()
-        self.client.simPause(True)
+        self.freeze
         return self.get_obs()
 
     def set_velocity(self, vel_vector, duration=1, wait=True):
+        self.unfreeze
         (vx, vy, vz) = vel_vector
         if wait:
             self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain).join()
@@ -72,6 +73,7 @@ class AirSimEnv():
             self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain)
 
     def set_velocity_z(self, vel_vector, duration=1, wait=True):  # sets velocity using x,y vector and sets z constant
+        self.unfreeze
         (vx, vy, z) = vel_vector
         if wait:
             self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain).join()
@@ -80,3 +82,10 @@ class AirSimEnv():
 
     def hover(self):
         self.client.hoverAsync().join()
+
+    def freeze(self):
+        self.client.simPause(False)  # unfreeze
+
+    def unfreeze(self):
+        self.client.simPause(True)  # unfreeze
+
