@@ -57,22 +57,28 @@ def train(client, policy, params):
         done = False
         while not done:
             # Get image for sample_action
-            responses = client.simGetImages([airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)]) # simGetImages vraci 144x256
+            responses = client.simGetImages([airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)])
             for idx, response in enumerate(responses):
                 # img1d = np.array(responses[0].image_data_float, dtype=np.float)
                 # img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
                 img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8)
-                img_rgb = img1d.reshape(3, response.height, response.width)
+                img_rgb = img1d.reshape(response.height, response.width, 3) # 144x256x3
 
+            img_rgb.transpose(2, 0, 1)
+            img_rgb = T.from_numpy(img_rgb).float()
             # Sample action from policy
-            action = policy.sample_action(img_rgb).detach()
-
+            action = policy.sample_action(img_rgb.flatten()).detach()
             # Record transition
-            batch_states.append(my_utils.to_tensor(client.getMultirotorState().kinematics_estimated.position, True))
-            batch_actions.append(action)
+            batch_states.append(client.getMultirotorState().kinematics_estimated.position)
+            batch_actions.append(action.numpy())
+            action = action.numpy()
 
             # Step action, rotate and move
+            if action[0] < 0:
+                action[0] = 0
+            print(action[0])
             client.rotateByYawRateAsync(40, action[0]) # Fixed rotation speed, action[0] = rotation span
+            exit()
             client.moveByVelocityAsync(action[1], action[2], 0, 0.5).join() # Moving in the xy plane, fixed z
 
             reward, done, _ = compute_reward(client)
