@@ -7,7 +7,7 @@ import NNQvalues
 import tempfile
 
 goal = [20, 20, 20]
-startdistance_goal = np.sqrt(goal[0]^2 + goal[1]^2 + goal[2]^2)
+startdistance_goal = np.sqrt(goal[0] ^ 2 + goal[1] ^ 2 + goal[2] ^ 2)
 
 
 def train(client, policy, params):
@@ -28,7 +28,7 @@ def train(client, policy, params):
 
     step_ctr = 0
 
-    for i in range (params["iters"]):
+    for i in range(params["iters"]):
         # Start flying
         client.takeoffAsync().join()
         client.moveToPositionAsync(initX, initY, initZ, 5).join()
@@ -62,7 +62,7 @@ def train(client, policy, params):
                 # img1d = np.array(responses[0].image_data_float, dtype=np.float)
                 # img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
                 img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8)
-                img_rgb = img1d.reshape(response.height, response.width, 3) # 144x256x3
+                img_rgb = img1d.reshape(response.height, response.width, 3)  # 144x256x3
 
             img_rgb.transpose(2, 0, 1)
             img_rgb = T.from_numpy(img_rgb).float()
@@ -77,10 +77,10 @@ def train(client, policy, params):
             if action[0] < 0:
                 action[0] = 0
             t = action[0].item()
-            client.rotateByYawRateAsync(40, t) # Fixed rotation speed, action[0] = rotation span
+            client.rotateByYawRateAsync(40, t)  # Fixed rotation speed, action[0] = rotation span
             velx = action[1].item()
             vely = action[2].item()
-            client.moveByVelocityAsync(velx, vely, 0, 0.5).join() # Moving in the xy plane, fixed z
+            client.moveByVelocityAsync(velx, vely, 0, 0.5).join()  # Moving in the xy plane, fixed z
 
             reward, done = compute_reward(client)
 
@@ -97,7 +97,6 @@ def train(client, policy, params):
         batch_ctr += 1
 
         if batch_ctr == params["batchsize"]:
-
             batch_states = T.cat(batch_states)
             batch_actions = T.cat(batch_actions)
             batch_rewards = T.cat(batch_rewards)
@@ -173,7 +172,7 @@ def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
 def transform_input(responses):
     """Transforms output of simGetImages to one 84x84 image"""
     img1d = np.array(responses[0].image_data_float, dtype=np.float)
-    img1d = 255/np.maximum(np.ones(img1d.size), img1d)
+    img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
     img2d = np.reshape(img1d, (responses[0].height, responses[0].width))
 
     from PIL import Image
@@ -189,23 +188,30 @@ def compute_reward(client):
     collision_info = client.simGetCollisionInfo()
     reward = 0
     done = False
+    travel_dist = np.sqrt(
+        np.power(goal[0], 2) + np.power(goal[1], 2))  # distance from initial position (0,0) to the goal in plane
 
-    distance_goal = np.sqrt((goal[0] - quad_state.x_val)*(goal[0] - quad_state.x_val) + (goal[1] - quad_state.y_val)*(goal[1] - quad_state.y_val))
+    # distance_goal = np.sqrt((goal[0] - quad_state.x_val)*(goal[0] - quad_state.x_val) + (goal[1] - quad_state.y_val)*(goal[1] - quad_state.y_val))
+    distance_goal = np.sqrt(np.power(goal[0] - quad_state.x_val, 2) + np.power(goal[1] - quad_state.y_val, 2))
+
     if distance_goal < 1:
         reward += 1000
         done = True
 
-    reward -= -1
+    reward += travel_dist - distance_goal
+    # reward -= 1
     if collision_info.has_collided:
         reward -= 1000
 
     return reward, done
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     # params = {"iters": 500000, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001, "ppo": True,
     #           "ppo_update_iters": 6, "animate": False, "train": True}
 
-    params = {"iters": 100, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True}
+    params = {"iters": 100, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001,
+              "ppo_update_iters": 6, "train": True}
 
     # Airsim environment
     client = airsim.MultirotorClient()
