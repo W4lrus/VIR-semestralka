@@ -76,10 +76,11 @@ def train(client, policy, params):
             # Step action, rotate and move
             if action[0] < 0:
                 action[0] = 0
-            print(action[0])
-            client.rotateByYawRateAsync(40, action[0]) # Fixed rotation speed, action[0] = rotation span
-            exit()
-            client.moveByVelocityAsync(action[1], action[2], 0, 0.5).join() # Moving in the xy plane, fixed z
+            t = action[0].item()
+            client.rotateByYawRateAsync(40, t) # Fixed rotation speed, action[0] = rotation span
+            velx = action[1].item()
+            vely = action[2].item()
+            client.moveByVelocityAsync(velx, vely, 0, 0.5).join() # Moving in the xy plane, fixed z
 
             reward, done, _ = compute_reward(client)
 
