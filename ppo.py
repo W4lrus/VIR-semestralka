@@ -189,13 +189,17 @@ def compute_reward(client):
     collision_info = client.simGetCollisionInfo()
     reward = 0
     done = False
+    travel_dist = np.sqrt(np.power(goal[0], 2) + np.power(goal[1], 2))        # distance from initial position (0,0) to the goal in plane
 
-    distance_goal = np.sqrt((goal[0] - quad_state.x_val)*(goal[0] - quad_state.x_val) + (goal[1] - quad_state.y_val)*(goal[1] - quad_state.y_val))
+    # distance_goal = np.sqrt((goal[0] - quad_state.x_val)*(goal[0] - quad_state.x_val) + (goal[1] - quad_state.y_val)*(goal[1] - quad_state.y_val))
+    distance_goal = np.sqrt(np.power(goal[0] - quad_state.x_val, 2) + np.power(goal[1] - quad_state.y_val, 2))
+    
     if distance_goal < 1:
         reward += 1000
         done = True
-
-    reward -= -1
+    
+    reward += travel_dist - distance_goal
+    # reward -= 1
     if collision_info.has_collided:
         reward -= 1000
 
