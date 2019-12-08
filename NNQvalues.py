@@ -4,13 +4,15 @@ import torch as T
 import numpy as np
 
 class Policy(nn.Module):
-    def __init__(self, client, hid_dim=64, tanh=False, std_fixed=True, obs_dim=None, act_dim=None):
+    def __init__(self, hid_dim=64, tanh=False, std_fixed=True):
         super(Policy, self).__init__()
+
+        hid_dim = 500
 
         self.tanh = tanh
         self.act_dim = 3
 
-        self.fc1 = nn.Linear(self.obs_dim, hid_dim)
+        self.fc1 = nn.Linear(3*144*256, hid_dim)
         self.m1 = nn.LayerNorm(hid_dim)
         self.fc2 = nn.Linear(hid_dim, hid_dim)
         self.m2 = nn.LayerNorm(hid_dim)

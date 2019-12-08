@@ -1,13 +1,10 @@
-import os
 import numpy as np
 import torch as T
 import my_utils
-import policies
-import random
-import string
-import socket
 import airsim
+import os
 import NNQvalues
+import tempfile
 
 goal = [20, 20, 20]
 startdistance_goal = np.sqrt(goal[0]^2 + goal[1]^2 + goal[2]^2)
@@ -36,10 +33,39 @@ def train(client, policy, params):
         client.takeoffAsync().join()
         client.moveToPositionAsync(initX, initY, initZ, 5).join()
 
+        # # Debug get images
+        # for i in range(2):
+        #     responses = client.simGetImages([
+        #         airsim.ImageRequest("0", airsim.ImageType.DepthVis)])  # depth visualization image
+        #         # airsim.ImageRequest("1", airsim.ImageType.DepthPerspective, True),  # depth in perspective projection
+        #         # airsim.ImageRequest("1", airsim.ImageType.Scene),  # scene vision image in png format
+        #         # airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)])  # scene vision image in uncompressed RGBA array
+        #     tmp_dir = "C:\\Users\Filip\\PycharmProjects\\LearningDrone\\airsim_drone"
+        #     for idx, response in enumerate(responses):
+        #
+        #         filename = os.path.join(tmp_dir, str(idx))
+        #
+        #         if response.pixels_as_float:
+        #             print("Type %d, size %d" % (response.image_type, len(response.image_data_float)))
+        #             airsim.write_pfm(os.path.normpath(filename + str(i) + '.pfm'), airsim.get_pfm_array(response))
+        #         elif response.compress:  # png format
+        #             print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
+        #             airsim.write_file(os.path.normpath(filename + str(i) + '.png'), response.image_data_uint8)
+        #
+        #     client.moveByVelocityAsync(0, 5, 0, 2).join()
+
         done = False
         while not done:
+            # Get image for sample_action
+            responses = client.simGetImages([airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)]) # simGetImages vraci 144x256
+            for idx, response in enumerate(responses):
+                # img1d = np.array(responses[0].image_data_float, dtype=np.float)
+                # img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
+                img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8)
+                img_rgb = img1d.reshape(3, response.height, response.width)
+
             # Sample action from policy
-            action = policy.sample_action(my_utils.to_tensor(client, True)).detach()
+            action = policy.sample_action(img_rgb).detach()
 
             # Record transition
             batch_states.append(my_utils.to_tensor(client.getMultirotorState().kinematics_estimated.position, True))
@@ -178,7 +204,7 @@ if __name__=="__main__":
     client.enableApiControl(True)
     client.armDisarm(True)
 
-    policy = NNQValues.Policy(client)
+    policy = NNQvalues.Policy()
     train(client, policy, params)
 
     # Quit
