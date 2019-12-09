@@ -6,14 +6,14 @@ import os
 import NNQvalues
 import tempfile
 
-goal = [20, 20, 20]
-startdistance_goal = np.sqrt(goal[0] ^ 2 + goal[1] ^ 2 + goal[2] ^ 2)
+from AirSimEnv import AirSimEnv
 
+goal = np.array([20, 20, -20])
+start_goal_distance = np.linalg.norm(goal)
 
-def train(client, policy, params):
-    initX = 0
-    initY = 0
-    initZ = -10
+def train(env, policy, params):
+
+    init_coords = (0, 0, -10)
 
     policy_optim = T.optim.Adam(policy.parameters(), lr=params["policy_lr"], weight_decay=params["weight_decay"],
                                 eps=1e-4)
@@ -29,71 +29,36 @@ def train(client, policy, params):
     step_ctr = 0
 
     for i in range(params["iters"]):
-        # Start flying
-        client.takeoffAsync().join()
-        client.moveToPositionAsync(initX, initY, initZ, 5).join()
-
-        # # Debug get images
-        # for i in range(2):
-        #     responses = client.simGetImages([
-        #         airsim.ImageRequest("0", airsim.ImageType.DepthVis)])  # depth visualization image
-        #         # airsim.ImageRequest("1", airsim.ImageType.DepthPerspective, True),  # depth in perspective projection
-        #         # airsim.ImageRequest("1", airsim.ImageType.Scene),  # scene vision image in png format
-        #         # airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)])  # scene vision image in uncompressed RGBA array
-        #     tmp_dir = "C:\\Users\Filip\\PycharmProjects\\LearningDrone\\airsim_drone"
-        #     for idx, response in enumerate(responses):
-        #
-        #         filename = os.path.join(tmp_dir, str(idx))
-        #
-        #         if response.pixels_as_float:
-        #             print("Type %d, size %d" % (response.image_type, len(response.image_data_float)))
-        #             airsim.write_pfm(os.path.normpath(filename + str(i) + '.pfm'), airsim.get_pfm_array(response))
-        #         elif response.compress:  # png format
-        #             print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
-        #             airsim.write_file(os.path.normpath(filename + str(i) + '.png'), response.image_data_uint8)
-        #
-        #     client.moveByVelocityAsync(0, 5, 0, 2).join()
+        env.reset()
+        env.move_to(init_coords)
 
         done = False
         while not done:
-            # Get image for sample_action
-            responses = client.simGetImages([airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)])
-            for idx, response in enumerate(responses):
-                # img1d = np.array(responses[0].image_data_float, dtype=np.float)
-                # img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
-                img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8)
-                img_rgb = img1d.reshape(response.height, response.width, 3)  # 144x256x3
+            img = env.get_rgb_img()
 
-            img_rgb.transpose(2, 0, 1)
-            img_rgb = T.from_numpy(img_rgb).float()
-            # Sample action from policy
-            action = policy.sample_action(img_rgb.flatten()).detach()
-            # Record transition
-            batch_states.append(client.getMultirotorState().kinematics_estimated.position)
-            batch_actions.append(action.numpy())
+            action = policy.sample_action(img.flatten()).detach() # TODO make policy CNN
+
+            batch_states.append(img)
+            batch_actions.append(action)
             action = action.numpy()
 
-            # Step action, rotate and move
-            if action[0] < 0:
+            if action[0] < 0:  # TODO make descrete actions, or remake policy to support continuous actions
                 action[0] = 0
             t = action[0].item()
-            client.rotateByYawRateAsync(40, t)  # Fixed rotation speed, action[0] = rotation span
+            #client.rotateByYawRateAsync(40, t)  # Fixed rotation speed, action[0] = rotation span # TODO implement rotation interface if needed
             velx = action[1].item()
             vely = action[2].item()
-            client.moveByVelocityAsync(velx, vely, 0, 0.5).join()  # Moving in the xy plane, fixed z
+            vels = (velx,vely,0)
+            env.set_velocity(vels, 0.5)
 
-            reward, done = compute_reward(client)
-
+            reward, done = compute_reward(env.get_obs()) # TODO mby better reward function??
             batch_rew += reward
-
             step_ctr += 1
 
-            # Record transition
             batch_rewards.append(my_utils.to_tensor(np.asarray(reward, dtype=np.float32), True))
-            batch_new_states.append(client.getMultirotorState().kinematics_estimated.position)
+            batch_new_states.append(env.get_rgb_img())
             batch_terminals.append(done)
 
-        # Completed episode
         batch_ctr += 1
 
         if batch_ctr == params["batchsize"]:
@@ -130,12 +95,7 @@ def train(client, policy, params):
         #     print("Saved checkpoint at {} with params {}".format(sdir, params))
 
         # Reset
-        client.reset()
-        # If computer vision mode enabled
-        # # Reset position
-        # # currently reset() doesn't work in CV mode. Below is the workaround
-        # client.simSetVehiclePose(airsim.Pose(airsim.Vector3r(0, 0, 0), airsim.to_quaternion(0, 0, 0)), True)
-
+        env.reset()
 
 def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantages, update_iters):
     log_probs_old = policy.log_probs(batch_states, batch_actions).detach()
@@ -154,7 +114,6 @@ def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantag
 
 def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
     N = len(batch_rewards)
-
     # Monte carlo estimate of targets
     targets = []
     for i in range(N):
@@ -182,17 +141,14 @@ def transform_input(responses):
     return im_final
 
 
-def compute_reward(client):
-    # distance from goal
-    quad_state = client.getMultirotorState().kinematics_estimated.position
-    collision_info = client.simGetCollisionInfo()
+def compute_reward(state):
+    position = state['pos']
+    collision = state['col']
     reward = 0
     done = False
-    travel_dist = np.sqrt(
-        np.power(goal[0], 2) + np.power(goal[1], 2))  # distance from initial position (0,0) to the goal in plane
+    travel_dist = np.linalg.norm(goal[:2]) # x and y distance from origin to goal
 
-    # distance_goal = np.sqrt((goal[0] - quad_state.x_val)*(goal[0] - quad_state.x_val) + (goal[1] - quad_state.y_val)*(goal[1] - quad_state.y_val))
-    distance_goal = np.sqrt(np.power(goal[0] - quad_state.x_val, 2) + np.power(goal[1] - quad_state.y_val, 2))
+    distance_goal = np.linalg.norm(goal[:2] - position[:2])
 
     if distance_goal < 1:
         reward += 1000
@@ -200,28 +156,20 @@ def compute_reward(client):
 
     reward += travel_dist - distance_goal
     # reward -= 1
-    if collision_info.has_collided:
+    if collision:
         reward -= 1000
+        done = True
 
     return reward, done
 
 
 if __name__ == "__main__":
-    # params = {"iters": 500000, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001, "ppo": True,
-    #           "ppo_update_iters": 6, "animate": False, "train": True}
-
     params = {"iters": 100, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001,
               "ppo_update_iters": 6, "train": True}
-
-    # Airsim environment
-    client = airsim.MultirotorClient()
-    client.confirmConnection()
-    client.enableApiControl(True)
-    client.armDisarm(True)
+    env = AirSimEnv()
 
     policy = NNQvalues.Policy()
-    train(client, policy, params)
 
-    # Quit
-    # that's enough fun for now. let's quit cleanly
-    client.enableApiControl(False)
+    train(env, policy, params)
+
+    env.hover()
