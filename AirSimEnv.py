@@ -40,8 +40,10 @@ class AirSimEnv():
         img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8)
         img_rgb = img1d.reshape(response.height, response.width, 3)
         if tensor:
-            img_rgb.transpose(2, 0, 1)
             img_rgb = T.from_numpy(img_rgb).float()
+            img_rgb = img_rgb.transpose(0, 2).transpose(1, 2)
+            s = img_rgb.shape
+            img_rgb = img_rgb.view(-1, s[0], s[1], s[2])
         return img_rgb
 
     def get_obs(self):  # return everything as numpy arrays
