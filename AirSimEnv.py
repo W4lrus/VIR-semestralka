@@ -14,7 +14,7 @@ class AirSimEnv:
         self.client.enableApiControl(True)   # enable control over python
         self.client.armDisarm(True)
 
-        self.freeze = freeze
+        self.stepping = freeze
         self.takeoff = takeoff
 
         self.state = self.get_obs()  # init state
@@ -25,12 +25,12 @@ class AirSimEnv:
         if takeoff:
             self.unfreeze()
             self.client.takeoffAsync().join()
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
 
     def get_pos(self, numpy=True):
         self.unfreeze()
         pos = self.client.simGetGroundTruthKinematics().position
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
         if numpy:
             pos = np.array([pos.x_val, pos.y_val, pos.z_val])
         return pos
@@ -38,7 +38,7 @@ class AirSimEnv:
     def get_ori(self, numpy=True):
         self.unfreeze()
         ori = self.client.simGetGroundTruthKinematics().orientation
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
         if numpy:
             ori = np.array([ori.w_val, ori.x_val, ori.y_val, ori.z_val])
         return ori
@@ -46,7 +46,7 @@ class AirSimEnv:
     def get_rgb_img(self, tensor=True):  # return rgb image as numpy array or torch tensor
         self.unfreeze()
         response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])[0]
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
 
         img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8)
         img_rgb = img1d.reshape(response.height, response.width, 3)
@@ -60,7 +60,7 @@ class AirSimEnv:
     def get_obs(self):  # return everything as numpy arrays
         self.unfreeze()
         col = self.client.simGetCollisionInfo().has_collided
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
 
         img_rgb = self.get_rgb_img(tensor=False)
         ori = self.get_ori()
@@ -77,7 +77,7 @@ class AirSimEnv:
         self.state = self.get_obs()  # init state
         if self.takeoff:
             self.client.takeoffAsync().join()
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
         return self.get_obs()
 
     def step(self, vel_vector, duration=1):  # sets drone velocity for duration in seconds
@@ -106,19 +106,17 @@ class AirSimEnv:
             self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain).join()
         else:
             self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain)
-        print('no')
-
 
     def move_to(self , coordinates, v=5):
         self.unfreeze()
         (x, y, z) = coordinates
         self.client.moveToPositionAsync(x, y, z, v).join()
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
 
     def hover(self):
         self.unfreeze()
         self.client.hoverAsync().join()
-        self.client.simPause(self.freeze)
+        self.client.simPause(self.stepping)
 
     def freeze(self):
         self.client.simPause(True)  # unfreeze
