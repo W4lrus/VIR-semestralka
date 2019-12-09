@@ -10,7 +10,11 @@ class AirSimEnv():
         self.client.confirmConnection()
         self.client.enableApiControl(True)   # enable control over python
         self.client.armDisarm(True)
-        self.client.simPause(freeze)
+
+        self.freeze = freeze
+        self.takeoff = takeoff
+
+        self.client.simPause(self.freeze)
         self.state = self.get_obs() # init state
         if dt:
             self.drivetrain = airsim.DrivetrainType.ForwardOnly
@@ -36,8 +40,8 @@ class AirSimEnv():
         img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8)
         img_rgb = img1d.reshape(response.height, response.width, 3)
         if tensor:
-            img_rgb = T.from_numpy(img_rgb).float()
             img_rgb.transpose(2, 0, 1)
+            img_rgb = T.from_numpy(img_rgb).float()
         return img_rgb
 
     def get_obs(self):  # return everything as numpy arrays
@@ -53,9 +57,9 @@ class AirSimEnv():
         self.client.enableApiControl(True)  # enable control over python
         self.client.armDisarm(True)
 
-        self.client.simPause(freeze)
+        self.client.simPause(self.freeze)
         self.state = self.get_obs()  # init state
-        if takeoff:
+        if self.takeoff:
             self.client.takeoffAsync().join()
         return self.get_obs()
 
