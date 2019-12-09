@@ -36,7 +36,7 @@ def train(env, policy, params):
         while not done:
             img = env.get_rgb_img()
 
-            action = policy.sample_action(img.flatten()).detach() # TODO make policy CNN
+            action = policy.sample_action(img).detach()
 
             batch_states.append(img)
             batch_actions.append(action)

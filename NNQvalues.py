@@ -3,24 +3,30 @@ import torch.nn.functional as F
 import torch as T
 import numpy as np
 
-class Policy(nn.Module):
-    def __init__(self, hid_dim=64, tanh=False, std_fixed=True):
-        super(Policy, self).__init__()
 
-        hid_dim = 500
+class Policy(nn.Module):
+    def __init__(self, tanh=False, std_fixed=True):
+        super(Policy, self).__init__()  # just a stupid basic CNN
 
         self.tanh = tanh
         self.act_dim = 3
 
-        self.fc1 = nn.Linear(3*144*256, hid_dim)
-        self.m1 = nn.LayerNorm(hid_dim)
-        self.fc2 = nn.Linear(hid_dim, hid_dim)
-        self.m2 = nn.LayerNorm(hid_dim)
-        self.fc3 = nn.Linear(hid_dim, self.act_dim)
+        self.cnv1 = nn.Conv2d(3, 16, 3, dilation=2)
+        self.m1 = nn.InstanceNorm2d(16)
+        self.cnv2 = nn.Conv2d(16, 32, 3)
+        self.m2 = nn.InstanceNorm2d(32)
+        self.cnv3 = nn.Conv2d(32, 32, 3)
+        self.m3 = nn.InstanceNorm2d(32)
 
-        T.nn.init.kaiming_normal_(self.fc1.weight, mode='fan_in', nonlinearity='leaky_relu')
-        T.nn.init.kaiming_normal_(self.fc2.weight, mode='fan_in', nonlinearity='leaky_relu')
-        T.nn.init.kaiming_normal_(self.fc3.weight, mode='fan_in', nonlinearity='linear')
+        vector = T.ones((1, 3, 144, 256))
+        size = T.prod(T.tensor(self.cnv3(self.cnv2(self.cnv1(vector))).shape))  # compute tensor elements
+
+        self.fc4 = nn.Linear(size, self.act_dim)
+
+        T.nn.init.kaiming_normal_(self.cnv1.weight, mode='fan_in', nonlinearity='leaky_relu')
+        T.nn.init.kaiming_normal_(self.cnv2.weight, mode='fan_in', nonlinearity='leaky_relu')
+        T.nn.init.kaiming_normal_(self.cnv3.weight, mode='fan_in', nonlinearity='leaky_relu')
+        T.nn.init.kaiming_normal_(self.fc4.weight, mode='fan_in', nonlinearity='linear')
 
         if std_fixed:
             self.log_std = T.zeros(1, self.act_dim)
@@ -28,12 +34,14 @@ class Policy(nn.Module):
             self.log_std = nn.Parameter(T.zeros(1, self.act_dim))
 
     def forward(self, x):
-        x = F.leaky_relu(self.m1(self.fc1(x)))
-        x = F.leaky_relu(self.m2(self.fc2(x)))
+        x = F.leaky_relu(self.m1(self.cnv1(x)))
+        x = F.leaky_relu(self.m2(self.cnv2(x)))
+        x = F.leaky_relu(self.m3(self.cnv3(x)))
+        x = x.flatten()
         if self.tanh:
-            x = T.tanh(self.fc3(x))
+            x = T.tanh(self.fc4(x))
         else:
-            x = self.fc3(x)
+            x = self.fc4(x)
         return x
 
     def sample_action(self, s):
