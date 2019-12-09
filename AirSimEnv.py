@@ -1,5 +1,7 @@
 import airsim
 import numpy as np
+import torch as T
+import numpy as np
 
 
 class AirSimEnv():
@@ -8,42 +10,53 @@ class AirSimEnv():
         self.client.confirmConnection()
         self.client.enableApiControl(True)   # enable control over python
         self.client.armDisarm(True)
-
         self.client.simPause(freeze)
-
         self.state = self.get_obs() # init state
-
         if dt:
             self.drivetrain = airsim.DrivetrainType.ForwardOnly
         else:
             self.drivetrain = airsim.DrivetrainType.MaxDegreeOfFreedom
-
         if takeoff:
             self.client.takeoffAsync().join()
 
-    def get_pos(self):
-        kinematics = self.client.simGetGroundTruthKinematics()  # acc, vel, pos and ori data
-        pos = kinematics.position
-        ori = kinematics.orientation
-        return pos , ori
+    def get_pos(self, numpy=True):
+        pos = self.client.simGetGroundTruthKinematics().position
+        if numpy:
+            pos = np.array([pos.x_val , pos.y_val , pos.z_val])
+        return pos
 
-    def get_rgb_img(self): # return rgb image as numpy array
+    def get_ori(self, numpy=True):
+        ori = self.client.simGetGroundTruthKinematics().orientation
+        if numpy:
+            ori = np.array([ori.w_val, ori.x_val, ori.y_val, ori.z_val])
+        return ori
+
+    def get_rgb_img(self, tensor=True):  # return rgb image as numpy array or torch tensor
         response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])[0]
         img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8)
         img_rgb = img1d.reshape(response.height, response.width, 3)
+        if tensor:
+            img_rgb = T.from_numpy(img_rgb).float()
+            img_rgb.transpose(2, 0, 1)
         return img_rgb
 
-    def get_obs(self):
+    def get_obs(self):  # return everything as numpy arrays
         col = self.client.simGetCollisionInfo().has_collided
-        img_rgb = self.get_rgb_img()
-        pos, ori = self.get_pos()
-        self.state = {'pos': pos, 'ori': ori, 'img': img_rgb, 'col': col} # update state
+        img_rgb = self.get_rgb_img(tensor=False)
+        ori = self.get_ori()
+        pos = self.get_pos()
+        self.state = {'pos': pos, 'ori': ori, 'img': img_rgb, 'col': col}  # update state
         return self.state
 
     def reset(self):
         self.client.reset()
         self.client.enableApiControl(True)  # enable control over python
         self.client.armDisarm(True)
+
+        self.client.simPause(freeze)
+        self.state = self.get_obs()  # init state
+        if takeoff:
+            self.client.takeoffAsync().join()
         return self.get_obs()
 
     def step(self , vel_vector , duration = 1):  # sets drone velocity for duration in seconds
