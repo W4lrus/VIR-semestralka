@@ -1,19 +1,18 @@
 import numpy as np
 import torch as T
 import my_utils
-import airsim
-import os
 import NNQvalues
 import tempfile
 
 from AirSimEnv import AirSimEnv
 
-goal = np.array([20, 20, -20])
+goal = np.array([20, 0, 5])
 start_goal_distance = np.linalg.norm(goal)
 
 def train(env, policy, params):
+    print('Training started')
 
-    init_coords = (0, 0, -10)
+    init_coords = (0, 0, -5)
 
     policy_optim = T.optim.Adam(policy.parameters(), lr=params["policy_lr"], weight_decay=params["weight_decay"],
                                 eps=1e-4)
@@ -29,6 +28,7 @@ def train(env, policy, params):
     step_ctr = 0
 
     for i in range(params["iters"]):
+        print('Epoch', i, 'started')
         env.reset()
         env.move_to(init_coords)
 
@@ -38,18 +38,16 @@ def train(env, policy, params):
 
             action = policy.sample_action(img).detach()
 
-            batch_states.append(img)
+            s = img.shape
+            batch_states.append(img)  # TODO this line has to be wrong << Wrong dimensions
+
             batch_actions.append(action)
             action = action.numpy()
 
-            if action[0] < 0:  # TODO make descrete actions, or remake policy to support continuous actions
-                action[0] = 0
-            t = action[0].item()
-            #client.rotateByYawRateAsync(40, t)  # Fixed rotation speed, action[0] = rotation span # TODO implement rotation interface if needed
-            velx = action[1].item()
-            vely = action[2].item()
-            vels = (velx,vely,0)
-            env.set_velocity(vels, 0.5)
+            velx = action[0].item()
+            vely = action[1].item()
+
+            env.step_z((velx, vely, 5), duration=0.5)
 
             reward, done = compute_reward(env.get_obs()) # TODO mby better reward function??
             batch_rew += reward
@@ -151,13 +149,12 @@ def compute_reward(state):
     distance_goal = np.linalg.norm(goal[:2] - position[:2])
 
     if distance_goal < 1:
-        reward += 1000
+        reward += 500
         done = True
 
     reward += travel_dist - distance_goal
-    # reward -= 1
     if collision:
-        reward -= 1000
+        reward -= 500
         done = True
 
     return reward, done
@@ -166,10 +163,11 @@ def compute_reward(state):
 if __name__ == "__main__":
     params = {"iters": 100, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001,
               "ppo_update_iters": 6, "train": True}
-    env = AirSimEnv()
-
-    policy = NNQvalues.Policy()
-
+    print('Connecting to AirSim Environment')
+    env = AirSimEnv(freeze=True)
+    print('AirSim environment initiated')
+    policy = NNQvalues.Policy(std_fixed=False)
+    print('Policy created')
     train(env, policy, params)
 
     env.hover()
