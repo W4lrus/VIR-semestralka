@@ -40,7 +40,7 @@ def train(env, policy, params):
             action = policy.sample_action(img).detach()
 
             s = img.shape
-            batch_states.append(img)  # TODO this line might be wrong << Wrong dimensions
+            batch_states.append(img)
 
             batch_actions.append(action)
             action = action[0].numpy()
