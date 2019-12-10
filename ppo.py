@@ -6,7 +6,7 @@ import tempfile
 
 from AirSimEnv import AirSimEnv
 
-goal = np.array([20, 0, 5])
+goal = np.array([20, 0, -5])
 start_goal_distance = np.linalg.norm(goal)
 
 def train(env, policy, params):
@@ -31,6 +31,7 @@ def train(env, policy, params):
         print('Epoch', i, 'started')
         env.reset()
         env.move_to(init_coords)
+        env.hover()
 
         done = False
         while not done:
@@ -39,15 +40,15 @@ def train(env, policy, params):
             action = policy.sample_action(img).detach()
 
             s = img.shape
-            batch_states.append(img)  # TODO this line has to be wrong << Wrong dimensions
+            batch_states.append(img)  # TODO this line might be wrong << Wrong dimensions
 
             batch_actions.append(action)
-            action = action.numpy()
+            action = action[0].numpy()
 
             velx = action[0].item()
             vely = action[1].item()
 
-            env.step_z((velx, vely, 5), duration=0.5)
+            env.step_z((velx, vely, -5), duration=params['step_length'])
 
             reward, done = compute_reward(env.get_obs()) # TODO mby better reward function??
             batch_rew += reward
@@ -56,6 +57,9 @@ def train(env, policy, params):
             batch_rewards.append(my_utils.to_tensor(np.asarray(reward, dtype=np.float32), True))
             batch_new_states.append(env.get_rgb_img())
             batch_terminals.append(done)
+
+            if step_ctr == params['maxsteps']:  # new epoch if too many steps (memory is not infinite)
+                break
 
         batch_ctr += 1
 
@@ -85,15 +89,11 @@ def train(env, policy, params):
             batch_new_states = []
             batch_terminals = []
 
-        # Saved learned model
         # if i % 100 == 0 and i > 0:
         #     sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
         #                         "agents/{}_{}_{}_pg.p".format(env.__class__.__name__, policy.__class__.__name__, params["ID"]))
         #     T.save(policy, sdir)
         #     print("Saved checkpoint at {} with params {}".format(sdir, params))
-
-        # Reset
-        env.reset()
 
 def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantages, update_iters):
     log_probs_old = policy.log_probs(batch_states, batch_actions).detach()
@@ -161,10 +161,10 @@ def compute_reward(state):
 
 
 if __name__ == "__main__":
-    params = {"iters": 100, "batchsize": 1, "gamma": 0.995, "policy_lr": 0.0007, "weight_decay": 0.0001,
-              "ppo_update_iters": 6, "train": True}
+    params = {"iters": 100, "batchsize": 1, "maxsteps": 100, "step_length:": 0.2, "gamma": 0.995, "policy_lr": 0.0007,
+              "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True}
     print('Connecting to AirSim Environment')
-    env = AirSimEnv(freeze=True)
+    env = AirSimEnv(freeze=True, takeoff=False)
     print('AirSim environment initiated')
     policy = NNQvalues.Policy(std_fixed=False)
     print('Policy created')
