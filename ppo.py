@@ -2,16 +2,17 @@ import numpy as np
 import torch as T
 import my_utils
 import NNQvalues
+import os
 from AirSimEnv import AirSimEnv
 
-goal = np.array([20, 0, -5])
+goal = np.array([20, 0, -10])
 start_goal_distance = np.linalg.norm(goal)
 
 
 def train(env, policy, params):
     print('Training started')
 
-    init_coords = (0, 0, -5)
+    init_coords = (0, 0, -10)
 
     policy_optim = T.optim.Adam(policy.parameters(), lr=params["policy_lr"], weight_decay=params["weight_decay"],
                                 eps=1e-4)
@@ -23,13 +24,13 @@ def train(env, policy, params):
     batch_ctr = 0
     batch_rew = 0
 
-    step_ctr = 0
-
     for i in range(params["iters"]):
         print('Episode', i, 'started')
         env.reset()
         env.move_to(init_coords)
-        env.hover()
+        #env.hover()
+
+        step_ctr = 0
 
         done = False
         while not done:
@@ -42,9 +43,9 @@ def train(env, policy, params):
             action = action[0].numpy()
             velx = action[0].item()
             vely = action[1].item()
-            env.step_z((velx, vely, -5), duration=params["step_length"])  # use generated action to move
+            new_state = env.step_z((velx, vely, -10), duration=params["step_length"])  # use generated action to move
 
-            reward, done = compute_reward(env.get_obs())  # compute reward in new state
+            reward, done = compute_reward(new_state)  # compute reward in new state
             batch_rew += reward
             step_ctr += 1
 
@@ -82,11 +83,11 @@ def train(env, policy, params):
             if params["device"] == 'cuda':
                 T.cuda.empty_cache()  # free memory
 
-            # if i % 100 == 0 and i > 0:
-        #     sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-        #                         "agents/{}_{}_{}_pg.p".format(env.__class__.__name__, policy.__class__.__name__, params["ID"]))
-        #     T.save(policy, sdir)
-        #     print("Saved checkpoint at {} with params {}".format(sdir, params))
+            if i % 100 == 0 and i > 0:
+                sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                "agents/{}_{}_{}_pg.p".format(env.__class__.__name__, policy.__class__.__name__, params["ID"]))
+                T.save(policy, sdir)
+                print("Saved checkpoint at {} with params {}".format(sdir, params))
 
 def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantages, update_iters):
     log_probs_old = policy.log_probs(batch_states, batch_actions).detach()
@@ -140,12 +141,12 @@ def compute_reward(state):
 
 
 if __name__ == "__main__":
-    params = {"iters": 40, "batchsize": 1, "maxsteps": 60, "step_length": 0.3, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.0007,
+    params = {"iters": 200, "batchsize": 1, "maxsteps": 60, "step_length": 0.5, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.0007,
               "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True}
     print('Connecting to AirSim Environment')
     env = AirSimEnv(freeze=True, takeoff=False)
     print('AirSim environment initiated')
-    policy = NNQvalues.Policy(std_fixed=False).to(params["device"])
+    policy = NNQvalues.Policy(tanh=True, std_fixed=False).to(params["device"])
     print('Policy created')
     train(env, policy, params)
 
