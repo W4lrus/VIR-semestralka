@@ -19,7 +19,6 @@ def train(env, policy, params):
     batch_states = []
     batch_actions = []
     batch_rewards = []
-    batch_new_states = []
     batch_terminals = []
     batch_ctr = 0
     batch_rew = 0
@@ -27,7 +26,7 @@ def train(env, policy, params):
     step_ctr = 0
 
     for i in range(params["iters"]):
-        print('Epoch', i, 'started')
+        print('Episode', i, 'started')
         env.reset()
         env.move_to(init_coords)
         env.hover()
@@ -36,28 +35,24 @@ def train(env, policy, params):
         while not done:
             img = env.get_rgb_img()
 
-            action = policy.sample_action(img.cuda()).detach().cpu()
+            action = policy.sample_action(img.cuda()).detach().cpu()  # generate action using img
+            batch_states.append(img.cpu())  # add image to state history
+            batch_actions.append(action)  # add action to action history
 
-            batch_states.append(img.cpu())
-
-            batch_actions.append(action)
             action = action[0].numpy()
-
             velx = action[0].item()
             vely = action[1].item()
+            env.step_z((velx, vely, -5), duration=params["step_length"])  # use generated action to move
 
-            env.step_z((velx, vely, -5), duration=params["step_length"])
-
-            reward, done = compute_reward(env.get_obs())  # TODO mby better reward function??
+            reward, done = compute_reward(env.get_obs())  # compute reward in new state
             batch_rew += reward
             step_ctr += 1
 
-            batch_rewards.append(my_utils.to_tensor(np.asarray(reward, dtype=np.float32), True))
-            batch_new_states.append(env.get_rgb_img())
-            batch_terminals.append(done)
-
             if step_ctr == params['maxsteps']:  # new epoch if too many steps (memory is not infinite)
-                break
+                done = True
+
+            batch_rewards.append(my_utils.to_tensor(np.asarray(reward, dtype=np.float32), True))  # add reward to reward history
+            batch_terminals.append(done)  # add terminal state position to history
 
         batch_ctr += 1
 
@@ -66,11 +61,8 @@ def train(env, policy, params):
             batch_actions = T.cat(batch_actions)
             batch_rewards = T.cat(batch_rewards)
 
-            # Scale rewards
-            batch_rewards = (batch_rewards - batch_rewards.mean()) / batch_rewards.std()
-
-            # Calculate episode advantages
-            batch_advantages = calc_advantages_MC(params["gamma"], batch_rewards, batch_terminals)
+            batch_rewards = (batch_rewards - batch_rewards.mean()) / batch_rewards.std()  # scale rewards
+            batch_advantages = calc_advantages_MC(params["gamma"], batch_rewards, batch_terminals)  # get advantages
 
             update_ppo(policy, policy_optim, batch_states.to(params["device"]), batch_actions.to(params["device"]),
                        batch_advantages.to(params["device"]), params["ppo_update_iters"])
@@ -85,11 +77,10 @@ def train(env, policy, params):
             batch_states = []
             batch_actions = []
             batch_rewards = []
-            batch_new_states = []
             batch_terminals = []
 
             if params["device"] == 'cuda':
-                T.cuda.empty_cache() # free memory
+                T.cuda.empty_cache()  # free memory
 
             # if i % 100 == 0 and i > 0:
         #     sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
@@ -100,7 +91,6 @@ def train(env, policy, params):
 def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantages, update_iters):
     log_probs_old = policy.log_probs(batch_states, batch_actions).detach()
     c_eps = 0.2
-
     # Do ppo_update
     for k in range(update_iters):
         log_probs_new = policy.log_probs(batch_states, batch_actions)
@@ -128,19 +118,6 @@ def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
     return targets
 
 
-def transform_input(responses):
-    """Transforms output of simGetImages to one 84x84 image"""
-    img1d = np.array(responses[0].image_data_float, dtype=np.float)
-    img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
-    img2d = np.reshape(img1d, (responses[0].height, responses[0].width))
-
-    from PIL import Image
-    image = Image.fromarray(img2d)
-    im_final = np.array(image.resize((84, 84)).convert('L'))
-
-    return im_final
-
-
 def compute_reward(state):
     position = state['pos']
     collision = state['col']
@@ -163,7 +140,7 @@ def compute_reward(state):
 
 
 if __name__ == "__main__":
-    params = {"iters": 40, "batchsize": 1, "maxsteps": 40, "step_length": 0.2, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.0007,
+    params = {"iters": 40, "batchsize": 1, "maxsteps": 60, "step_length": 0.3, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.0007,
               "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True}
     print('Connecting to AirSim Environment')
     env = AirSimEnv(freeze=True, takeoff=False)

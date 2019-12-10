@@ -5,11 +5,11 @@ import numpy as np
 
 
 class Policy(nn.Module):
-    def __init__(self, tanh=False, std_fixed=True):
+    def __init__(self, image_dims=(3, 144, 256), tanh=False, std_fixed=True):
         super(Policy, self).__init__()  # just a stupid basic CNN
 
         self.tanh = tanh
-        self.act_dim = 3
+        self.act_dim = 2
 
         self.cnv1 = nn.Conv2d(3, 16, 3, dilation=2)
         self.m1 = nn.InstanceNorm2d(16)
@@ -18,8 +18,8 @@ class Policy(nn.Module):
         self.cnv3 = nn.Conv2d(32, 32, 3)
         self.m3 = nn.InstanceNorm2d(32)
 
-        vector = T.ones((1, 3, 144, 256))
-        size = T.prod(T.tensor(self.cnv3(self.cnv2(self.cnv1(vector))).shape))  # compute tensor elements
+        vector = T.ones((1, image_dims[0], image_dims[1], image_dims[2]))
+        size = T.prod(T.tensor(self.cnv3(self.cnv2(self.cnv1(vector))).shape))  # compute tensor elements for fc4 input size
 
         self.fc4 = nn.Linear(size, self.act_dim)
 
