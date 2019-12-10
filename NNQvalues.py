@@ -37,12 +37,26 @@ class Policy(nn.Module):
         x = F.leaky_relu(self.m1(self.cnv1(x)))
         x = F.leaky_relu(self.m2(self.cnv2(x)))
         x = F.leaky_relu(self.m3(self.cnv3(x)))
-        x = x.flatten()
+        x = x.flatten(1)
         if self.tanh:
             x = T.tanh(self.fc4(x))
         else:
             x = self.fc4(x)
         return x
+
+    def soft_clip_grads(self, bnd=1):
+        maxval = 0
+
+        for p in self.parameters():
+            m = T.abs(p.grad).max()
+            if m > maxval:
+                maxval = m
+
+        if maxval > bnd:
+            # print("Soft clipping grads")
+            for p in self.parameters():
+                if p.grad is None: continue
+                p.grad = (p.grad / maxval) * bnd
 
     def sample_action(self, s):
         return T.normal(self.forward(s), T.exp(self.log_std))
