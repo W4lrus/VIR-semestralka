@@ -2,12 +2,11 @@ import numpy as np
 import torch as T
 import my_utils
 import NNQvalues
-import tempfile
-
 from AirSimEnv import AirSimEnv
 
 goal = np.array([20, 0, -5])
 start_goal_distance = np.linalg.norm(goal)
+
 
 def train(env, policy, params):
     print('Training started')
@@ -37,10 +36,9 @@ def train(env, policy, params):
         while not done:
             img = env.get_rgb_img()
 
-            action = policy.sample_action(img).detach()
+            action = policy.sample_action(img.cuda()).detach().cpu()
 
-            s = img.shape
-            batch_states.append(img)
+            batch_states.append(img.cpu())
 
             batch_actions.append(action)
             action = action[0].numpy()
@@ -48,9 +46,9 @@ def train(env, policy, params):
             velx = action[0].item()
             vely = action[1].item()
 
-            env.step_z((velx, vely, -5), duration=params['step_length'])
+            env.step_z((velx, vely, -5), duration=params["step_length"])
 
-            reward, done = compute_reward(env.get_obs()) # TODO mby better reward function??
+            reward, done = compute_reward(env.get_obs())  # TODO mby better reward function??
             batch_rew += reward
             step_ctr += 1
 
@@ -74,7 +72,8 @@ def train(env, policy, params):
             # Calculate episode advantages
             batch_advantages = calc_advantages_MC(params["gamma"], batch_rewards, batch_terminals)
 
-            update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantages, params["ppo_update_iters"])
+            update_ppo(policy, policy_optim, batch_states.to(params["device"]), batch_actions.to(params["device"]),
+                       batch_advantages.to(params["device"]), params["ppo_update_iters"])
 
             print("Episode {}/{}, loss_V: {}, loss_policy: {}, mean ep_rew: {}".
                   format(i, params["iters"], None, None, batch_rew / params["batchsize"]))
@@ -89,7 +88,10 @@ def train(env, policy, params):
             batch_new_states = []
             batch_terminals = []
 
-        # if i % 100 == 0 and i > 0:
+            if params["device"] == 'cuda':
+                T.cuda.empty_cache() # free memory
+
+            # if i % 100 == 0 and i > 0:
         #     sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
         #                         "agents/{}_{}_{}_pg.p".format(env.__class__.__name__, policy.__class__.__name__, params["ID"]))
         #     T.save(policy, sdir)
@@ -161,12 +163,12 @@ def compute_reward(state):
 
 
 if __name__ == "__main__":
-    params = {"iters": 100, "batchsize": 1, "maxsteps": 100, "step_length:": 0.2, "gamma": 0.995, "policy_lr": 0.0007,
+    params = {"iters": 40, "batchsize": 1, "maxsteps": 40, "step_length": 0.2, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.0007,
               "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True}
     print('Connecting to AirSim Environment')
     env = AirSimEnv(freeze=True, takeoff=False)
     print('AirSim environment initiated')
-    policy = NNQvalues.Policy(std_fixed=False)
+    policy = NNQvalues.Policy(std_fixed=False).to(params["device"])
     print('Policy created')
     train(env, policy, params)
 
