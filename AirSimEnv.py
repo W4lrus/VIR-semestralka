@@ -46,6 +46,8 @@ class AirSimEnv:
     def get_rgb_img(self, tensor=True):  # return rgb image as numpy array or torch tensor
         self.unfreeze()
         response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])[0]
+        while response.height*response.width == 0:
+            response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])[0]
         self.client.simPause(self.stepping)
 
         img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8)
@@ -101,6 +103,7 @@ class AirSimEnv:
             self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain)
 
     def set_velocity_z(self, vel_vector, duration=1, wait=True):  # sets velocity using x,y vector and sets z constant
+        self.unfreeze()
         (vx, vy, z) = vel_vector
         if wait:
             self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain).join()
@@ -119,7 +122,9 @@ class AirSimEnv:
         self.client.simPause(self.stepping)
 
     def freeze(self):
-        self.client.simPause(True)  # unfreeze
+        if not self.client.simIsPause():
+            self.client.simPause(True)  # unfreeze
 
     def unfreeze(self):
-        self.client.simPause(False)  # unfreeze
+        if self.client.simIsPause():
+            self.client.simPause(False)  # unfreeze
