@@ -1,6 +1,8 @@
 import airsim
 import torch as T
 import numpy as np
+import time
+from math import floor
 
 '''drivetrain = airsim.DrivetrainType.ForwardOnly makes the drone move only forward.
 If drone is asked to move to side, he will first rotate, then move forward.
@@ -16,6 +18,7 @@ class AirSimEnv:
 
         self.stepping = freeze
         self.takeoff = takeoff
+        self.min_period = 0.02
 
         self.state = self.get_obs()  # init state
         if dt:
@@ -98,20 +101,24 @@ class AirSimEnv:
     def set_velocity(self, vel_vector, duration=1, wait=True):
         self.unfreeze()
         (vx, vy, vz) = vel_vector
+        self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain)
         if wait:
-            self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain).join()
-        else:
-            self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain)
+            for i in range(floor(duration / self.min_period)):
+                if self.get_col():
+                    return None
+                time.sleep(self.min_period)
 
     def set_velocity_z(self, vel_vector, duration=1, wait=True):  # sets velocity using x,y vector and sets z constant
         self.unfreeze()
         (vx, vy, z) = vel_vector
+        self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain)
         if wait:
-            self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain).join()
-        else:
-            self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain)
+            for i in range(floor(duration/self.min_period)):
+                if self.get_col():
+                    return None
+                time.sleep(self.min_period)
 
-    def move_to(self , coordinates, v=5):
+    def move_to(self, coordinates, v=5):
         self.unfreeze()
         (x, y, z) = coordinates
         self.client.moveToPositionAsync(x, y, z, v).join()
