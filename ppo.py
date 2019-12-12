@@ -4,6 +4,7 @@ import my_utils
 import NNQvalues
 import os
 from AirSimEnv import AirSimEnv
+from time import time
 
 goal = 300
 
@@ -23,7 +24,7 @@ def train(env, policy, params):
     batch_rew = 0
 
     for i in range(params["iters"]):
-        print('Episode', i, 'started')
+        print('Episode', i+1, 'started')
         env.reset()
         env.move_to(init_coords)
 
@@ -38,7 +39,7 @@ def train(env, policy, params):
             batch_states.append(img.cpu())  # add image to state history
             batch_actions.append(action)  # add action to action history
 
-            action = old_action + action[0].numpy()
+            action = (old_action + 2*action[0].numpy())/3  # not sure if it is a good idea
             old_action = action
 
             velx = action[0].item()
@@ -56,7 +57,7 @@ def train(env, policy, params):
             batch_terminals.append(done)  # add terminal state position to history
 
         batch_ctr += 1
-        print(env.get_pos())
+        print(env.get_pos(), 'reward', batch_rew)
 
         if batch_ctr == params["batchsize"]:
             batch_states = T.cat(batch_states)
@@ -86,7 +87,7 @@ def train(env, policy, params):
 
             if i % 100 == 0 and i > 0:
                 sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                "agents/{}_{}_{}_pg.p".format(env.__class__.__name__, policy.__class__.__name__, params["ID"]))
+                                "agents/{}_{}_{}_.p".format(env.__class__.__name__, policy.__class__.__name__, params["ID"]))
                 T.save(policy, sdir)
                 print("Saved checkpoint at {} with params {}".format(sdir, params))
 
@@ -102,9 +103,6 @@ def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantag
         loss.backward()
         policy.soft_clip_grads(3.)
         policy_optim.step()
-
-    print('stds', policy.log_std.detach().cpu().numpy()[0])
-
 
 def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
     N = len(batch_rewards)
@@ -123,16 +121,16 @@ def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
 
 
 def compute_reward(state, vx, vy, t):
-    v = 2
+    v = 1
     position = state['pos']
     collision = state['col']
     reward = 0
     done = False
 
-    reward += position[1] - v*t - (vy**2)/10 + 0.5*vx
+    reward += position[0] - v*t - (vy**2)/10 + vx
 
-    if position[1] > goal:
-        reward += 1000
+    if position[0] > goal:
+        reward += 400
         done = True
 
     if collision:
@@ -143,8 +141,8 @@ def compute_reward(state, vx, vy, t):
 
 
 if __name__ == "__main__":
-    params = {"iters": 200, "batchsize": 2, "maxsteps": 80, "step_length": 0.5, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.005,
-              "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True}
+    params = {"iters": 200, "batchsize": 1, "maxsteps": 50, "step_length": 1.2, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.001,
+              "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True, "ID": time()//10000}
     print('Connecting to AirSim Environment')
     env = AirSimEnv(freeze=True, takeoff=False)
     print('AirSim environment initiated')
