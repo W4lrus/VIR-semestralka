@@ -11,12 +11,12 @@ class Policy(nn.Module):
         self.tanh = tanh
         self.act_dim = 2
 
-        self.cnv1 = nn.Conv2d(3, 16, 3, dilation=2)
-        self.m1 = nn.InstanceNorm2d(16)
-        self.cnv2 = nn.Conv2d(16, 32, 3)
-        self.m2 = nn.InstanceNorm2d(32)
-        self.cnv3 = nn.Conv2d(32, 32, 3)
-        self.m3 = nn.InstanceNorm2d(32)
+        self.cnv1 = nn.Conv2d(3, 3, 3, dilation=2)
+        self.m1 = nn.InstanceNorm2d(3)
+        self.cnv2 = nn.Conv2d(3, 4, 3, dilation=2)
+        self.m2 = nn.InstanceNorm2d(4)
+        self.cnv3 = nn.Conv2d(4, 10, 3)
+        self.m3 = nn.InstanceNorm2d(10)
 
         vector = T.ones((1, image_dims[0], image_dims[1], image_dims[2]))
         size = T.prod(T.tensor(self.cnv3(self.cnv2(self.cnv1(vector))).shape))  # compute tensor elements for fc4 input size
@@ -31,7 +31,7 @@ class Policy(nn.Module):
         if std_fixed:
             self.log_std = T.zeros(1, self.act_dim)
         else:
-            self.log_std = nn.Parameter(T.zeros(1, self.act_dim))
+            self.log_std = nn.Parameter(T.zeros(1, self.act_dim) + 0.4)
 
     def forward(self, x):
         x = F.leaky_relu(self.m1(self.cnv1(x)))
@@ -39,7 +39,7 @@ class Policy(nn.Module):
         x = F.leaky_relu(self.m3(self.cnv3(x)))
         x = x.flatten(1)
         if self.tanh:
-            x = T.tanh(self.fc4(x))
+            x = T.tanh(self.fc4(x)/20)
         else:
             x = self.fc4(x)
         return x
