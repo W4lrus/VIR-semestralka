@@ -5,9 +5,7 @@ import NNQvalues
 import os
 from AirSimEnv import AirSimEnv
 
-goal = np.array([20, 0, -10])
-start_goal_distance = np.linalg.norm(goal)
-
+goal = 300
 
 def train(env, policy, params):
     print('Training started')
@@ -28,11 +26,11 @@ def train(env, policy, params):
         print('Episode', i, 'started')
         env.reset()
         env.move_to(init_coords)
-        #env.hover()
 
         step_ctr = 0
 
         done = False
+        old_action = np.array([0, 0])
         while not done:
             img = env.get_rgb_img()
 
@@ -40,12 +38,14 @@ def train(env, policy, params):
             batch_states.append(img.cpu())  # add image to state history
             batch_actions.append(action)  # add action to action history
 
-            action = action[0].numpy()
+            action = old_action + action[0].numpy()
+            old_action = action
+
             velx = action[0].item()
             vely = action[1].item()
             new_state = env.step_z((velx, vely, -10), duration=params["step_length"])  # use generated action to move
 
-            reward, done = compute_reward(new_state)  # compute reward in new state
+            reward, done = compute_reward(new_state, velx, vely, step_ctr)  # compute reward in new state
             batch_rew += reward
             step_ctr += 1
 
@@ -56,6 +56,7 @@ def train(env, policy, params):
             batch_terminals.append(done)  # add terminal state position to history
 
         batch_ctr += 1
+        print(env.get_pos())
 
         if batch_ctr == params["batchsize"]:
             batch_states = T.cat(batch_states)
@@ -102,6 +103,8 @@ def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantag
         policy.soft_clip_grads(3.)
         policy_optim.step()
 
+    print('stds', policy.log_std.detach().cpu().numpy()[0])
+
 
 def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
     N = len(batch_rewards)
@@ -119,20 +122,19 @@ def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
     return targets
 
 
-def compute_reward(state):
+def compute_reward(state, vx, vy, t):
+    v = 2
     position = state['pos']
     collision = state['col']
     reward = 0
     done = False
-    travel_dist = np.linalg.norm(goal[:2]) # x and y distance from origin to goal
 
-    distance_goal = np.linalg.norm(goal[:2] - position[:2])
+    reward += position[1] - v*t - (vy**2)/10 + 0.5*vx
 
-    if distance_goal < 1:
-        reward += 500
+    if position[1] > goal:
+        reward += 1000
         done = True
 
-    reward += travel_dist - distance_goal
     if collision:
         reward -= 500
         done = True
@@ -141,7 +143,7 @@ def compute_reward(state):
 
 
 if __name__ == "__main__":
-    params = {"iters": 200, "batchsize": 1, "maxsteps": 60, "step_length": 0.5, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.0007,
+    params = {"iters": 200, "batchsize": 2, "maxsteps": 80, "step_length": 0.5, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.005,
               "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True}
     print('Connecting to AirSim Environment')
     env = AirSimEnv(freeze=True, takeoff=False)
