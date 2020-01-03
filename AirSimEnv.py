@@ -8,8 +8,6 @@ from math import floor
 If drone is asked to move to side, he will first rotate, then move forward.
 drivetrain = airsim.DrivetrainType.MaxDegreeOfFreedom just moves drone in a specified direction without turning'''
 
-CLOCKSPEED=10
-
 
 class AirSimEnv:
     def __init__(self, takeoff=True, dt=0, freeze=False):  # if freeze=True sim is frozen if possible
@@ -52,10 +50,14 @@ class AirSimEnv:
         self.last_collision = new_timestamp
         return collided
 
-    def get_rgb_img(self, tensor=True):  # return rgb image as numpy array or torch tensor
-        response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.DepthVis, False, False)])[0]
+    def get_rgb_img(self, tensor=True, typ='RGB'):  # return rgb image as numpy array or torch tensor
+        img_type = airsim.ImageType.Scene
+        if typ == 'DEPTH':
+            img_type = airsim.ImageType.DepthVis
+
+        response = self.client.simGetImages([airsim.ImageRequest("0", img_type, False, False)])[0]
         while response.height*response.width == 0:
-            response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])[0]
+            response = self.client.simGetImages([airsim.ImageRequest("0", img_type, False, False)])[0]
 
         img1d = np.frombuffer(response.image_data_uint8, dtype=np.uint8)
         img_rgb = img1d.reshape(response.height, response.width, 3)
