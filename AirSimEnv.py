@@ -50,7 +50,7 @@ class AirSimEnv:
         self.last_collision = new_timestamp
         return collided
 
-    def get_rgb_img(self, tensor=True, typ='RGB'):  # return rgb image as numpy array or torch tensor
+    def get_rgb_img(self, typ='RGB', tensor=True):  # return rgb image as numpy array or torch tensor
         img_type = airsim.ImageType.Scene
         if typ == 'DEPTH':
             img_type = airsim.ImageType.DepthVis
