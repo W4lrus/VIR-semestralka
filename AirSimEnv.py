@@ -8,6 +8,8 @@ from math import floor
 If drone is asked to move to side, he will first rotate, then move forward.
 drivetrain = airsim.DrivetrainType.MaxDegreeOfFreedom just moves drone in a specified direction without turning'''
 
+CLOCKSPEED=10
+
 
 class AirSimEnv:
     def __init__(self, takeoff=True, dt=0, freeze=False):  # if freeze=True sim is frozen if possible
@@ -20,6 +22,7 @@ class AirSimEnv:
         self.takeoff = takeoff
         self.min_period = 0.02
 
+        self.last_collision = self.client.simGetCollisionInfo().time_stamp
         self.state = self.get_obs()  # init state
         if dt:
             self.drivetrain = airsim.DrivetrainType.ForwardOnly
@@ -28,6 +31,7 @@ class AirSimEnv:
         if takeoff:
             self.unfreeze()
             self.client.takeoffAsync().join()
+
         self.client.simPause(self.stepping)
 
     def get_pos(self, numpy=True):
@@ -43,11 +47,13 @@ class AirSimEnv:
         return ori
 
     def get_col(self):
-        col = self.client.simGetCollisionInfo().has_collided
-        return col
+        new_timestamp = self.client.simGetCollisionInfo().time_stamp  # timestamp seems to be more reliable
+        collided = (self.last_collision != new_timestamp)
+        self.last_collision = new_timestamp
+        return collided
 
     def get_rgb_img(self, tensor=True):  # return rgb image as numpy array or torch tensor
-        response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])[0]
+        response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.DepthVis, False, False)])[0]
         while response.height*response.width == 0:
             response = self.client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])[0]
 
@@ -83,12 +89,14 @@ class AirSimEnv:
         self.state = self.get_obs()  # init state
         if self.takeoff:
             self.client.takeoffAsync().join()
+
+        self.last_collision = self.client.simGetCollisionInfo().time_stamp
         self.client.simPause(self.stepping)
         return self.state
 
     def step(self, vel_vector, duration=1):  # sets drone velocity for duration in seconds
         self.unfreeze()
-        self.set_velocity_z(vel_vector, duration)
+        self.set_velocity(vel_vector, duration)
         self.freeze()
         return self.get_obs()
 
@@ -101,22 +109,18 @@ class AirSimEnv:
     def set_velocity(self, vel_vector, duration=1, wait=True):
         self.unfreeze()
         (vx, vy, vz) = vel_vector
-        self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain)
         if wait:
-            for i in range(floor(duration / self.min_period)):
-                if self.get_col():
-                    return None
-                time.sleep(self.min_period)
+            self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain).join()
+        else:
+            self.client.moveByVelocityAsync(vx, vy, vz, duration, self.drivetrain)
 
     def set_velocity_z(self, vel_vector, duration=1, wait=True):  # sets velocity using x,y vector and sets z constant
         self.unfreeze()
         (vx, vy, z) = vel_vector
-        self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain)
         if wait:
-            for i in range(floor(duration/self.min_period)):
-                if self.get_col():
-                    return None
-                time.sleep(self.min_period)
+            self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain).join()
+        else:
+            self.client.moveByVelocityZAsync(vx, vy, z, duration, self.drivetrain)
 
     def move_to(self, coordinates, v=5):
         self.unfreeze()
