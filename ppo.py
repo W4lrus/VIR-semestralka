@@ -5,17 +5,16 @@ import NNQvalues
 import os
 from AirSimEnv import AirSimEnv
 from time import time
+from math import floor
 
-goal = 300
+goal = 30
+start = (0, 0, -3)
 
 def train(env, policy, params):
     print('Training started')
 
-    init_coords = (0, 0, -10)
-
     policy_optim = T.optim.Adam(policy.parameters(), lr=params["policy_lr"], weight_decay=params["weight_decay"],
                                 eps=1e-4)
-
     batch_states = []
     batch_actions = []
     batch_rewards = []
@@ -26,29 +25,31 @@ def train(env, policy, params):
     for i in range(params["iters"]):
         print('Episode', i+1, 'started')
         env.reset()
-        env.move_to(init_coords)
+        env.move_to(start)
 
+        this_reward = 0
         step_ctr = 0
-
         done = False
-        old_action = np.array([0, 0])
+
         while not done:
-            img = env.get_rgb_img()
+            img = env.get_rgb_img(typ=params["image_type"])
 
             action = policy.sample_action(img.cuda()).detach().cpu()  # generate action using img
             batch_states.append(img.cpu())  # add image to state history
             batch_actions.append(action)  # add action to action history
 
-            action = (old_action + 2*action[0].numpy())/3  # not sure if it is a good idea
-            old_action = action
+            action = action[0].numpy() # played with new map, model, action, getrgb, if one step in first episode - nan actions?
 
             velx = action[0].item()
             vely = action[1].item()
-            new_state = env.step_z((velx, vely, -10), duration=params["step_length"])  # use generated action to move
+            velz = action[2].item()
+            new_state = env.step((velx, vely, velz), duration=params["step_length"])  # use generated action to move
 
             reward, done = compute_reward(new_state, velx, vely, step_ctr)  # compute reward in new state
             batch_rew += reward
             step_ctr += 1
+
+            this_reward += reward
 
             if step_ctr == params['maxsteps']:  # new epoch if too many steps (memory is not infinite)
                 done = True
@@ -57,14 +58,15 @@ def train(env, policy, params):
             batch_terminals.append(done)  # add terminal state position to history
 
         batch_ctr += 1
-        print(env.get_pos(), 'reward', batch_rew)
+        print('reward:', floor(this_reward), 'distance traveled:', floor(new_state['pos'][0]*10)/10)
 
         if batch_ctr == params["batchsize"]:
             batch_states = T.cat(batch_states)
             batch_actions = T.cat(batch_actions)
             batch_rewards = T.cat(batch_rewards)
 
-            batch_rewards = (batch_rewards - batch_rewards.mean()) / batch_rewards.std()  # scale rewards
+            if batch_rewards.size()[0] != 1:  # std is zero
+                batch_rewards = (batch_rewards - batch_rewards.mean()) / batch_rewards.std()  # scale rewards
             batch_advantages = calc_advantages_MC(params["gamma"], batch_rewards, batch_terminals)  # get advantages
 
             update_ppo(policy, policy_optim, batch_states.to(params["device"]), batch_actions.to(params["device"]),
@@ -85,11 +87,12 @@ def train(env, policy, params):
             if params["device"] == 'cuda':
                 T.cuda.empty_cache()  # free memory
 
-            if i % 100 == 0 and i > 0:
-                sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                                "agents/{}_{}_{}_.p".format(env.__class__.__name__, policy.__class__.__name__, params["ID"]))
-                T.save(policy, sdir)
-                print("Saved checkpoint at {} with params {}".format(sdir, params))
+        if i % 100 == 0 and i > 0:
+            sdir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                "agents/{}_{}_{}.p".format(params['ID'], i, floor(time()) % 2000))
+            T.save(policy, sdir)
+            print("Saved checkpoint at {} with params {}".format(sdir, params))
+
 
 def update_ppo(policy, policy_optim, batch_states, batch_actions, batch_advantages, update_iters):
     log_probs_old = policy.log_probs(batch_states, batch_actions).detach()
@@ -120,34 +123,61 @@ def calc_advantages_MC(gamma, batch_rewards, batch_terminals):
     return targets
 
 
+def test(env, agent, image_type):
+    env.reset()
+    env.move_to(start)
+    step_ctr = 0
+    done = False
+    while not done:
+        img = env.get_rgb_img(typ=image_type)
+        action = agent.sample_action(img.cuda(), random=False).detach().cpu()  # generate action using img
+        action = action[0].numpy()
+        velx = action[0].item()
+        vely = action[1].item()
+        velz = action[2].item()
+        new_state = env.step((velx, vely, velz), duration=params["step_length"])  # use generated action to move
+
+        _, done = compute_reward(new_state, velx, vely, step_ctr)  # compute reward in new state
+        step_ctr += 1
+
+    print('Finished after', step_ctr, 'steps. Distance traveled:', floor(new_state['pos'][0] * 10) / 10)
+
+
 def compute_reward(state, vx, vy, t):
-    v = 1
     position = state['pos']
     collision = state['col']
     reward = 0
     done = False
 
-    reward += position[0] - v*t - (vy**2)/10 + vx
+    reward += 30*position[0]/(t+1) + 5*vx - 10 + position[0]/3
 
     if position[0] > goal:
-        reward += 400
+        reward += 300
         done = True
 
-    if collision:
-        reward -= 500
+    if collision or position[2] > -0.2:
+        reward -= 150
         done = True
 
     return reward, done
 
 
 if __name__ == "__main__":
-    params = {"iters": 200, "batchsize": 1, "maxsteps": 50, "step_length": 1.2, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.001,
-              "weight_decay": 0.0001, "ppo_update_iters": 6, "train": True, "ID": time()//10000}
-    print('Connecting to AirSim Environment')
-    env = AirSimEnv(freeze=True, takeoff=False)
-    print('AirSim environment initiated')
-    policy = NNQvalues.Policy(tanh=True, std_fixed=False).to(params["device"])
-    print('Policy created')
-    train(env, policy, params)
 
-    env.hover()
+    params = {"iters": 30000, "batchsize": 5, "maxsteps": 70, "step_length": 1, "device": 'cuda', "gamma": 0.995, "policy_lr": 0.0005,
+              "weight_decay": 0.0001, "ppo_update_iters": 5, "image_type": "RGB", "ID": 'AlexNet3'}
+
+    print('Connecting to AirSim Environment')
+    env = AirSimEnv(freeze=True, takeoff=True)
+    print('AirSim environment initiated')
+
+    #NN = NNQvalues.Policy(action_space=3, tanh=True, std_fixed=False).to(params["device"])
+
+    NN = T.load('./agents/AlexNet2_17300.p')
+
+    print('Policy created')
+
+    #train(env, NN, params)
+    #env.hover()
+
+    test(env, NN, params["image_type"])
